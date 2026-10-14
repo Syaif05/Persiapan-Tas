@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/datetime_utils.dart';
+import '../../core/utils/trip_text_formatter.dart';
 import '../../core/widgets/bawa_button.dart';
 import '../../core/widgets/bawa_filter_chip.dart';
 import '../../core/widgets/bawa_progress_bar.dart';
@@ -1084,11 +1086,52 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> with Single
               ],
             ),
             actions: [
+              IconButton(
+                tooltip: 'Salin Teks Bawaan (Format AI / Rapi)',
+                icon: const Icon(Icons.copy_all_outlined, color: AppColors.textPrimary),
+                onPressed: () async {
+                  final items = await ref.read(tripPackingRepositoryProvider).getTripItemsWithDetails(trip.id);
+                  final text = TripTextFormatter.formatTrip(
+                    trip: trip,
+                    stops: details.stops,
+                    items: items,
+                    summary: details.summary,
+                    bags: details.bags,
+                  );
+                  await Clipboard.setData(ClipboardData(text: text));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Daftar bawaan disalin ke clipboard! Siap dibaca atau dicek dengan AI.'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                },
+              ),
               PopupMenuButton<String>(
                 tooltip: 'Aksi Perjalanan',
                 icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
                 onSelected: (value) async {
-                  if (value == 'checkpoint') {
+                  if (value == 'copy_text') {
+                    final items = await ref.read(tripPackingRepositoryProvider).getTripItemsWithDetails(trip.id);
+                    final text = TripTextFormatter.formatTrip(
+                      trip: trip,
+                      stops: details.stops,
+                      items: items,
+                      summary: details.summary,
+                      bags: details.bags,
+                    );
+                    await Clipboard.setData(ClipboardData(text: text));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Daftar bawaan disalin ke clipboard! Siap dibaca atau dicek dengan AI.'),
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  } else if (value == 'checkpoint') {
                     context.push('/trips/${trip.id}/checkpoint');
                   } else if (value == 'save_as_template') {
                     _showSaveAsTemplateDialog(context, details);
@@ -1106,28 +1149,41 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> with Single
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('Hapus Perjalanan', style: AppTypography.itemTitle),
-                        content: Text('Yakin ingin menghapus perjalanan "${trip.name}"? Seluruh daftar bawaan akan terhapus.'),
+                        title: const Text('Hapus Bersih Perjalanan', style: AppTypography.itemTitle),
+                        content: Text(
+                          'Yakin ingin menghapus perjalanan "${trip.name}"? Seluruh daftar bawaan, manifest, riwayat checkpoint, serta seluruh file foto & lampiran tiket akan dihapus bersih dari perangkat untuk menghemat ruang penyimpanan.',
+                        ),
                         actions: [
                           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Batal')),
-                          FilledButton(
+                          FilledButton.icon(
                             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+                            icon: const Icon(Icons.delete_forever, size: 18),
                             onPressed: () => Navigator.of(ctx).pop(true),
-                            child: const Text('Hapus'),
+                            label: const Text('Hapus Bersih'),
                           ),
                         ],
                       ),
                     );
                     if (confirm == true && mounted) {
-                      await ref.read(tripsRepositoryProvider).deleteTrip(trip.id);
+                      await ref.read(tripsRepositoryProvider).deleteTrip(trip.id, deleteMedia: true);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Perjalanan dihapus')));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Perjalanan beserta berkas foto/tiket berhasil dihapus')));
                         context.pop();
                       }
                     }
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'copy_text',
+                    child: Row(
+                      children: [
+                        Icon(Icons.copy_rounded, size: 20, color: AppColors.primary),
+                        SizedBox(width: AppSpacing.sm),
+                        Text('Salin Teks (Format AI / Rapi)'),
+                      ],
+                    ),
+                  ),
                   if (trip.status == 'planning')
                     const PopupMenuItem(
                       value: 'departure_check',

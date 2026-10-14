@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
+import '../services/asset_storage_service.dart';
 import 'reminders_repository.dart';
 
 class TripWithDetails {
@@ -51,9 +52,10 @@ class TripPackingSummary {
 class TripsRepository {
   final AppDatabase _db;
   final RemindersRepository? _remindersRepository;
+  final AssetStorageService? _assetStorageService;
   final _uuid = const Uuid();
 
-  TripsRepository(this._db, [this._remindersRepository]);
+  TripsRepository(this._db, [this._remindersRepository, this._assetStorageService]);
 
   /// Watch list of trips sorted by startDate ASC, filtered by status if provided
   Stream<List<TripEntry>> watchTrips({String? status, bool includeArchived = false}) {
@@ -364,9 +366,26 @@ class TripsRepository {
     }
   }
 
-  /// Delete a trip
-  Future<void> deleteTrip(String id) async {
+  /// Delete a trip completely, including physical media files (ticket attachments/photos) (TECH-01)
+  Future<void> deleteTrip(String id, {bool deleteMedia = true}) async {
+    // 1. Batalkan semua pengingat perjalanan ini
     await _remindersRepository?.cancelRemindersForTrip(id);
+
+    // 2. Jika deleteMedia diaktifkan, hapus semua file fisik lampiran tiket dari media storage
+    final storage = _assetStorageService;
+    if (deleteMedia && storage != null) {
+      final tickets = await (_db.select(_db.tickets)..where((t) => t.tripId.equals(id))).get();
+      for (final ticket in tickets) {
+        final attachments = await (_db.select(_db.ticketAttachments)
+              ..where((a) => a.ticketId.equals(ticket.id)))
+            .get();
+        for (final att in attachments) {
+          await storage.deleteAsset(att.assetId);
+        }
+      }
+    }
+
+    // 3. Hapus perjalanan (cascade foreign keys akan menghapus entri tabel terkait)
     await (_db.delete(_db.trips)..where((t) => t.id.equals(id))).go();
   }
 

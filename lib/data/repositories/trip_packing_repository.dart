@@ -242,6 +242,11 @@ class TripPackingRepository {
     });
   }
 
+  /// Get trip items once (snapshot)
+  Future<List<TripItemWithDetails>> getTripItemsWithDetails(String tripId, {PackingFilter filter = PackingFilter.all}) async {
+    return watchTripItems(tripId, filter: filter).first;
+  }
+
   static String _formatYmd(DateTime dt) {
     final y = dt.year.toString().padLeft(4, '0');
     final m = dt.month.toString().padLeft(2, '0');

@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/datetime_utils.dart';
+import '../../core/utils/trip_text_formatter.dart';
 import '../../core/widgets/bawa_app_bar.dart';
 import '../../core/widgets/bawa_empty_state.dart';
 import '../../core/widgets/bawa_filter_chip.dart';
@@ -158,7 +160,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => Container(
+      builder: (sheetCtx) {
+        final activeTrips = allTrips.where((t) => t.trip.status != 'completed' && !t.trip.isArchived).toList();
+        final completedTrips = allTrips.where((t) => t.trip.status == 'completed' || t.trip.isArchived).toList();
+
+        return Container(
         decoration: const BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusSheet)),
@@ -216,7 +222,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 },
               ),
               const Divider(height: 1),
-              // Pilihan 2: Daftar Perjalanan
+              // Pilihan 2: Daftar Perjalanan (Dipisahkan Aktif vs Selesai)
+
               if (allTrips.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(AppSpacing.base),
@@ -226,39 +233,93 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 )
               else
                 Flexible(
-                  child: ListView.separated(
+                  child: ListView(
                     shrinkWrap: true,
-                    itemCount: allTrips.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final item = allTrips[index];
-                      final isSelected = _selectedTripId == item.trip.id;
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: isSelected ? AppColors.primary : AppColors.surfaceMuted,
-                          foregroundColor: isSelected ? Colors.white : AppColors.textPrimary,
-                          child: const Icon(Icons.shopping_bag_outlined, size: 20),
+                    children: [
+                      // Subheading: Perjalanan Aktif
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.base, vertical: 8),
+                        child: Text(
+                          'PERJALANAN AKTIF / PERSIAPAN (${activeTrips.length})',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                        title: Text(item.trip.name, style: AppTypography.itemTitle),
-                        subtitle: Text(
-                          '${item.summary.completedRows}/${item.summary.totalCarriedRows} barang siap • Status: ${item.trip.status}',
-                          style: AppTypography.metadata,
+                      ),
+                      if (activeTrips.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: AppSpacing.base, vertical: 8),
+                          child: Text('Tidak ada perjalanan aktif. Buat perjalanan baru untuk membawa barang.', style: AppTypography.metadata),
+                        )
+                      else
+                        ...activeTrips.map((item) {
+                          final isSelected = _selectedTripId == item.trip.id;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: isSelected ? AppColors.primary : AppColors.surfaceMuted,
+                              foregroundColor: isSelected ? Colors.white : AppColors.textPrimary,
+                              child: const Icon(Icons.shopping_bag_outlined, size: 20),
+                            ),
+                            title: Text(item.trip.name, style: AppTypography.itemTitle),
+                            subtitle: Text(
+                              '${item.summary.completedRows}/${item.summary.totalCarriedRows} barang siap • Status: ${item.trip.status == 'ongoing' ? 'Sedang Berjalan' : 'Persiapan'}',
+                              style: AppTypography.metadata,
+                            ),
+                            trailing: isSelected ? const Icon(Icons.check, color: AppColors.primary) : null,
+                            onTap: () {
+                              setState(() => _selectedTripId = item.trip.id);
+                              Navigator.of(sheetCtx).pop();
+                            },
+                          );
+                        }),
+
+                      // Subheading: Menu Khusus Riwayat Selesai
+                      if (completedTrips.isNotEmpty) ...[
+                        const Divider(height: AppSpacing.md),
+                        ExpansionTile(
+                          initiallyExpanded: completedTrips.any((t) => t.trip.id == _selectedTripId),
+                          leading: const CircleAvatar(
+                            backgroundColor: AppColors.surfaceMuted,
+                            child: Icon(Icons.history_outlined, size: 20, color: AppColors.textSecondary),
+                          ),
+                          title: Text('Menu Khusus: Riwayat Selesai (${completedTrips.length})', style: AppTypography.itemTitle.copyWith(fontSize: 14)),
+                          subtitle: const Text('Perjalanan selesai & arsip terdahulu', style: AppTypography.metadata),
+                          children: completedTrips.map((item) {
+                            final isSelected = _selectedTripId == item.trip.id;
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                              leading: CircleAvatar(
+                                backgroundColor: isSelected ? AppColors.success : AppColors.surfaceMuted,
+                                foregroundColor: isSelected ? Colors.white : AppColors.textSecondary,
+                                child: const Icon(Icons.check_circle_outline, size: 18),
+                              ),
+                              title: Text(item.trip.name, style: AppTypography.itemTitle),
+                              subtitle: Text(
+                                'Selesai • ${item.summary.completedRows}/${item.summary.totalCarriedRows} barang terkemas',
+                                style: AppTypography.metadata,
+                              ),
+                              trailing: isSelected ? const Icon(Icons.check, color: AppColors.success) : null,
+                              onTap: () {
+                                setState(() => _selectedTripId = item.trip.id);
+                                Navigator.of(sheetCtx).pop();
+                              },
+                            );
+                          }).toList(),
                         ),
-                        trailing: isSelected ? const Icon(Icons.check, color: AppColors.primary) : null,
-                        onTap: () {
-                          setState(() => _selectedTripId = item.trip.id);
-                          Navigator.of(sheetCtx).pop();
-                        },
-                      );
-                    },
+                      ],
+                    ],
                   ),
                 ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
   // --- VIEW 1: MODE TAS PERJALANAN (SHOPPING CART STYLE) ---
   Widget _buildTripCartView(BuildContext context, String tripId, List<TripWithDetails> allTrips) {
@@ -292,15 +353,30 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                           ),
                         ],
                       ),
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Isi Tas', style: TextStyle(fontSize: 12)),
-                        onPressed: () => _openItemPicker(context, tripId),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.copy_all_outlined, size: 15),
+                            label: const Text('Salin Teks', style: TextStyle(fontSize: 11)),
+                            onPressed: () => _copyTripToClipboard(context, details, tripItemsAsync.value ?? []),
+                          ),
+                          const SizedBox(width: 6),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Isi Tas', style: TextStyle(fontSize: 12)),
+                            onPressed: () => _openItemPicker(context, tripId),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -311,6 +387,45 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     completedUnits: summary.totalPackedUnits,
                     totalUnits: summary.totalPlannedUnits,
                   ),
+                  // Banner Jika Perjalanan Sudah Selesai (Opsi Hapus Bersih Media)
+                  if (details.trip.status == 'completed' || details.trip.isArchived) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusInput),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_outline, color: AppColors.success, size: 20),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Perjalanan Selesai (Riwayat)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                Text('Hapus seluruh data & media foto/tiket untuk menghemat memori.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                              ],
+                            ),
+                          ),
+                          FilledButton.tonalIcon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.errorSoft,
+                              foregroundColor: AppColors.error,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.delete_forever_outlined, size: 15),
+                            label: const Text('Hapus Bersih', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            onPressed: () => _confirmDeleteCompletedTrip(context, details.trip),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -1283,14 +1398,17 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   // --- DIALOG: TAMBAH MASTER ITEM KE DAFTAR BAWAAN PERJALANAN ---
   void _showAddItemToTripModal(BuildContext context, ItemEntry item, List<TripWithDetails> allTrips) {
-    if (allTrips.isEmpty) {
+    // Filter HANYA perjalanan aktif (persiapan/berjalan), kecualikan yang sudah selesai agar fokus menaruh bawaan baru
+    final activeTrips = allTrips.where((t) => t.trip.status != 'completed' && !t.trip.isArchived).toList();
+
+    if (activeTrips.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Buat perjalanan terlebih dahulu sebelum menambahkan barang ke daftar bawaan.')),
+        const SnackBar(content: Text('Tidak ada perjalanan aktif. Buat perjalanan baru terlebih dahulu.')),
       );
       return;
     }
 
-    String selectedTripId = allTrips.first.trip.id;
+    String selectedTripId = activeTrips.first.trip.id;
     int qty = 1;
     final maxQty = item.quantity;
 
@@ -1308,7 +1426,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
               DropdownButtonFormField<String>(
                 initialValue: selectedTripId,
                 isExpanded: true,
-                items: allTrips.map((t) {
+                items: activeTrips.map((t) {
                   return DropdownMenuItem(
                     value: t.trip.id,
                     child: Text(t.trip.name, overflow: TextOverflow.ellipsis),
@@ -1415,6 +1533,59 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => TripItemPickerSheet(tripId: tripId),
     );
+  }
+
+  // --- SALIN DATA BAWAAN PERJALANAN (FORMAT AI & MANUSIA) ---
+  void _copyTripToClipboard(BuildContext context, TripWithDetails details, List<TripItemWithDetails> items) {
+    final text = TripTextFormatter.formatTrip(
+      trip: details.trip,
+      stops: details.stops,
+      items: items,
+      summary: details.summary,
+      bags: details.bags,
+    );
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Daftar bawaan berhasil disalin ke clipboard! Siap dibaca atau dicek AI.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // --- KONFIRMASI HAPUS BERSIH PERJALANAN SELESAI ---
+  Future<void> _confirmDeleteCompletedTrip(BuildContext context, TripEntry trip) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Bersih Perjalanan?', style: AppTypography.itemTitle),
+        content: Text(
+          'Perjalanan "${trip.name}" telah selesai. Menghapus perjalanan ini akan membersihkan seluruh data perjalanan, daftar bawaan, riwayat checkpoint, serta menghapus seluruh berkas foto & lampiran tiket dari media storage perangkat untuk menghemat ruang memori.\n\nApakah Anda yakin ingin menghapus bersih?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            icon: const Icon(Icons.delete_forever, size: 18),
+            label: const Text('Hapus Bersih'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      await ref.read(tripsRepositoryProvider).deleteTrip(trip.id, deleteMedia: true);
+      setState(() => _selectedTripId = null);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Perjalanan "${trip.name}" beserta seluruh data & fotonya berhasil dihapus bersih!')),
+        );
+      }
+    }
   }
 
   // --- SEED CONTOH BARANG ---

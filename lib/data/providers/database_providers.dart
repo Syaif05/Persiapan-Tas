@@ -167,7 +167,8 @@ final filteredInventoryStreamProvider = StreamProvider<List<ItemWithDetails>>((r
 final tripsRepositoryProvider = Provider<TripsRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final remindersRepo = ref.watch(remindersRepositoryProvider);
-  return TripsRepository(db, remindersRepo);
+  final assetService = ref.watch(assetStorageServiceProvider);
+  return TripsRepository(db, remindersRepo, assetService);
 });
 
 // Trip Packing Repository Provider
