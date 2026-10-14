@@ -128,7 +128,8 @@ class _TripFormScreenState extends ConsumerState<TripFormScreen> {
   }
 
   Future<void> _saveTrip() async {
-    if (!_formKey.currentState!.validate()) return;
+    final form = _formKey.currentState;
+    if (form == null || !form.validate()) return;
 
     final stops = _stopControllers
         .map((c) => c.text.trim())
@@ -179,7 +180,8 @@ class _TripFormScreenState extends ConsumerState<TripFormScreen> {
           context.pushReplacement('/trips/$newId');
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Error _saveTrip: $e\n$stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Gagal menyimpan perjalanan: $e'), backgroundColor: AppColors.error),
